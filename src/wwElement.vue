@@ -18,7 +18,7 @@
     </div>
 
     <div v-else-if="!myGeometry" class="overlay empty">
-      <p>Drag & Drop STL File</p>
+      <p>Drag & Drop STL or STEP File</p>
     </div>
 
     <TresCanvas clear-color="#1E1E1E" style="width: 100%; height: 100%;">
@@ -31,7 +31,7 @@
         <TresMeshStandardMaterial vertexColors />
       </TresMesh>
 
-      <TresGridHelper v-else :args="[20, 20, 0x444444, 0x333333]" />
+      <TresGridHelper :args="[20, 20, 0x444444, 0x333333]" />
 
     </TresCanvas>
   </div>
@@ -42,6 +42,7 @@ import { ref, watch, shallowRef } from 'vue'
 import { TresCanvas } from '@tresjs/core'
 import { OrbitControls } from '@tresjs/cientos'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
 import * as THREE from 'three'
 
 const props = defineProps({
@@ -56,7 +57,7 @@ const isLoading = ref(false)
 const API_URL = "https://mechlytix-api-815993640334.europe-west2.run.app/analyze" 
 
 // --- API & COLORING LOGIC ---
-const analyzeAndColor = async (file, geometry) => {
+const analyzeAndColor = async (file, localGeometry) => {
   isLoading.value = true
   
   try {
@@ -74,7 +75,33 @@ const analyzeAndColor = async (file, geometry) => {
     const result = await response.json()
     console.log("Analysis Result:", result)
 
-    // 2. Paint Geometry
+    // 2. Determine Geometry (Local STL or Backend GLB)
+    let geometry = localGeometry
+
+    if (result.glb_base64) {
+      // Decode Base64 to ArrayBuffer
+      const binaryString = atob(result.glb_base64)
+      const len = binaryString.length
+      const bytes = new Uint8Array(len)
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i)
+      }
+
+      // Load GLB
+      const loader = new GLTFLoader()
+      const gltf = await loader.parseAsync(bytes.buffer, '')
+      
+      // Find the first mesh in the GLTF scene
+      gltf.scene.traverse((child) => {
+        if (child.isMesh && !geometry) {
+          geometry = child.geometry
+        }
+      })
+    }
+
+    if (!geometry) throw new Error("No geometry found to render")
+
+    // 3. Paint Geometry
     const count = geometry.attributes.position.count
     const colors = new Float32Array(count * 3) 
     
@@ -92,12 +119,15 @@ const analyzeAndColor = async (file, geometry) => {
       const vB = faceIndex * 3 + 1
       const vC = faceIndex * 3 + 2
 
-      // Paint Vertex A
-      colors[vA * 3] = 1.0; colors[vA * 3 + 1] = 0.4; colors[vA * 3 + 2] = 0.0;
-      // Paint Vertex B
-      colors[vB * 3] = 1.0; colors[vB * 3 + 1] = 0.4; colors[vB * 3 + 2] = 0.0;
-      // Paint Vertex C
-      colors[vC * 3] = 1.0; colors[vC * 3 + 1] = 0.4; colors[vC * 3 + 2] = 0.0;
+      // Check bounds to avoid crashes if backend mesh differs slightly
+      if (vC * 3 + 2 < colors.length) {
+        // Paint Vertex A
+        colors[vA * 3] = 1.0; colors[vA * 3 + 1] = 0.4; colors[vA * 3 + 2] = 0.0;
+        // Paint Vertex B
+        colors[vB * 3] = 1.0; colors[vB * 3 + 1] = 0.4; colors[vB * 3 + 2] = 0.0;
+        // Paint Vertex C
+        colors[vC * 3] = 1.0; colors[vC * 3 + 1] = 0.4; colors[vC * 3 + 2] = 0.0;
+      }
     })
 
     // Apply colors to mesh
@@ -124,8 +154,12 @@ const onDrop = (event) => {
   isDragging.value = false
   const file = event.dataTransfer?.files[0]
   
-  if (file && file.name.toLowerCase().endsWith('.stl')) {
-    // 1. Read file locally to display it
+  if (!file) return
+
+  const filename = file.name.toLowerCase()
+
+  if (filename.endsWith('.stl')) {
+    // 1. Read file locally to display it (Fast Preview)
     const reader = new FileReader()
     reader.onload = (e) => {
       const loader = new STLLoader()
@@ -135,8 +169,12 @@ const onDrop = (event) => {
       analyzeAndColor(file, geometry)
     }
     reader.readAsArrayBuffer(file)
+  } else if (filename.endsWith('.step') || filename.endsWith('.stp')) {
+    // 1. STEP files cannot be previewed locally easily.
+    // Send directly to API and wait for GLB response.
+    analyzeAndColor(file, null)
   } else {
-    alert("Please drop an .STL file")
+    alert("Please drop an .STL or .STEP file")
   }
 }
 </script>
