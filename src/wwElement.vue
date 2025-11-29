@@ -134,6 +134,19 @@ const analyzeAndColor = async (file, localGeometry) => {
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
     geometry.center()
     geometry.computeVertexNormals()
+
+    // --- AUTO-SCALE TO FIT VIEWER ---
+    geometry.computeBoundingBox()
+    const maxDim = Math.max(
+      geometry.boundingBox.max.x - geometry.boundingBox.min.x,
+      geometry.boundingBox.max.y - geometry.boundingBox.min.y,
+      geometry.boundingBox.max.z - geometry.boundingBox.min.z
+    )
+    
+    if (maxDim > 0) {
+      const scaleFactor = 10 / maxDim // Target size: 10 units
+      geometry.scale(scaleFactor, scaleFactor, scaleFactor)
+    }
     
     // Update the reactive variable to trigger render
     myGeometry.value = geometry
