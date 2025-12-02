@@ -172,9 +172,7 @@ const analyzeAndColor = async (file, localGeometry) => {
     const result = await response.json()
     console.log("Analysis Result:", result)
     
-    if (result.dimensions) {
-      dimensions.value = result.dimensions
-    }
+    // Volume still comes from backend
     if (result.volume) {
       partVolume.value = result.volume
     }
@@ -204,6 +202,12 @@ const analyzeAndColor = async (file, localGeometry) => {
     }
 
     if (!geometry) throw new Error("No geometry found to render")
+
+    // --- CALCULATE DIMENSIONS LOCALLY (Before Scaling) ---
+    geometry.computeBoundingBox()
+    const size = new THREE.Vector3()
+    geometry.boundingBox.getSize(size)
+    dimensions.value = [size.x, size.y, size.z]
 
     // 3. Paint Geometry
     const count = geometry.attributes.position.count
