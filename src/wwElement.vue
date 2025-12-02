@@ -147,6 +147,12 @@ const analyzeAndColor = async (file, localGeometry) => {
       const scaleFactor = 10 / maxDim // Target size: 10 units
       geometry.scale(scaleFactor, scaleFactor, scaleFactor)
     }
+
+    // --- ALIGN TO GRID (SIT ON TOP) ---
+    // Re-compute bounding box after scaling
+    geometry.computeBoundingBox()
+    // Move up by the distance from the bottom (min.y) to 0
+    geometry.translate(0, -geometry.boundingBox.min.y, 0)
     
     // Update the reactive variable to trigger render
     myGeometry.value = geometry
