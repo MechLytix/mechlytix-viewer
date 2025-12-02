@@ -21,13 +21,31 @@
 
     <!-- UI CONTROLS -->
     <div class="ui-controls" v-if="myGeometry">
-      <button @click="resetCamera" class="btn-reset">↺ Reset View</button>
+      <div class="controls-top">
+        <button @click="toggleAnalysis" class="btn-toggle" :class="{ active: showAnalysis }">
+          {{ showAnalysis ? 'Hide Analysis' : 'Show Analysis' }}
+        </button>
+        <button @click="resetCamera" class="btn-reset">↺ Reset View</button>
+      </div>
       
       <div class="dimensions-panel" v-if="dimensions">
         <h4>Dimensions</h4>
         <div class="dim-row"><span>X:</span> {{ dimensions[0].toFixed(2) }}</div>
         <div class="dim-row"><span>Y:</span> {{ dimensions[1].toFixed(2) }}</div>
         <div class="dim-row"><span>Z:</span> {{ dimensions[2].toFixed(2) }}</div>
+      </div>
+
+      <div class="mass-panel" v-if="partVolume">
+        <h4>Mass Estimator</h4>
+        <select v-model="selectedMaterial">
+          <option v-for="mat in materials" :key="mat.name" :value="mat">
+            {{ mat.name }}
+          </option>
+        </select>
+        <div class="mass-result">
+          <span>Mass:</span>
+          <strong>{{ estimatedMass.toFixed(2) }} g</strong>
+        </div>
       </div>
     </div>
 
@@ -49,7 +67,7 @@
 </template>
 
 <script setup>
-import { ref, watch, shallowRef } from 'vue'
+import { ref, watch, shallowRef, computed } from 'vue'
 import { TresCanvas } from '@tresjs/core'
 import { OrbitControls } from '@tresjs/cientos'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader'
@@ -65,6 +83,46 @@ const isDragging = ref(false)
 const isLoading = ref(false)
 const dimensions = ref(null)
 const cameraRef = shallowRef(null)
+
+// Analysis State
+const showAnalysis = ref(true)
+const analysisColors = shallowRef(null)
+const standardColors = shallowRef(null)
+const partVolume = ref(0) // in mm^3
+
+// Materials (Density in g/cm^3)
+const materials = [
+  { name: 'PLA Plastic', density: 1.24 },
+  { name: 'ABS Plastic', density: 1.04 },
+  { name: 'Aluminum 6061', density: 2.70 },
+  { name: 'Steel (Mild)', density: 7.85 },
+  { name: 'Stainless Steel 304', density: 8.00 },
+  { name: 'Titanium', density: 4.43 }
+]
+const selectedMaterial = ref(materials[2]) // Default to Aluminum
+
+const estimatedMass = computed(() => {
+  if (!partVolume.value) return 0
+  // Volume is mm^3. Density is g/cm^3.
+  // 1 cm^3 = 1000 mm^3
+  // Mass (g) = (Volume / 1000) * Density
+  return (partVolume.value / 1000) * selectedMaterial.value.density
+})
+
+const toggleAnalysis = () => {
+  showAnalysis.value = !showAnalysis.value
+  updateColors()
+}
+
+const updateColors = () => {
+  if (!myGeometry.value) return
+  
+  const colors = showAnalysis.value ? analysisColors.value : standardColors.value
+  if (colors) {
+    myGeometry.value.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    myGeometry.value.attributes.color.needsUpdate = true
+  }
+}
 
 const resetCamera = () => {
   if (!cameraRef.value) return
@@ -117,6 +175,9 @@ const analyzeAndColor = async (file, localGeometry) => {
     if (result.dimensions) {
       dimensions.value = result.dimensions
     }
+    if (result.volume) {
+      partVolume.value = result.volume
+    }
 
     // 2. Determine Geometry (Local STL or Backend GLB)
     let geometry = localGeometry
@@ -146,35 +207,35 @@ const analyzeAndColor = async (file, localGeometry) => {
 
     // 3. Paint Geometry
     const count = geometry.attributes.position.count
-    const colors = new Float32Array(count * 3) 
     
-    // Default Color: Grey (0.5, 0.5, 0.5)
+    // Create Standard Colors (All Grey)
+    const greyColors = new Float32Array(count * 3)
     for (let i = 0; i < count * 3; i++) {
-      colors[i] = 0.5 
+      greyColors[i] = 0.5
     }
+    standardColors.value = greyColors
 
-    // Error Color: Orange (1.0, 0.4, 0.0)
+    // Create Analysis Colors (Grey + Orange Highlights)
+    const resultColors = new Float32Array(greyColors) // Copy grey
     const badFaces = result.bad_face_indices || []
     
     badFaces.forEach(faceIndex => {
-      // Each face is a triangle with 3 vertices (A, B, C)
       const vA = faceIndex * 3
       const vB = faceIndex * 3 + 1
       const vC = faceIndex * 3 + 2
 
-      // Check bounds to avoid crashes if backend mesh differs slightly
-      if (vC * 3 + 2 < colors.length) {
-        // Paint Vertex A
-        colors[vA * 3] = 1.0; colors[vA * 3 + 1] = 0.4; colors[vA * 3 + 2] = 0.0;
-        // Paint Vertex B
-        colors[vB * 3] = 1.0; colors[vB * 3 + 1] = 0.4; colors[vB * 3 + 2] = 0.0;
-        // Paint Vertex C
-        colors[vC * 3] = 1.0; colors[vC * 3 + 1] = 0.4; colors[vC * 3 + 2] = 0.0;
+      if (vC * 3 + 2 < resultColors.length) {
+        // Paint Orange (1.0, 0.4, 0.0)
+        resultColors[vA * 3] = 1.0; resultColors[vA * 3 + 1] = 0.4; resultColors[vA * 3 + 2] = 0.0;
+        resultColors[vB * 3] = 1.0; resultColors[vB * 3 + 1] = 0.4; resultColors[vB * 3 + 2] = 0.0;
+        resultColors[vC * 3] = 1.0; resultColors[vC * 3 + 1] = 0.4; resultColors[vC * 3 + 2] = 0.0;
       }
     })
+    analysisColors.value = resultColors
 
-    // Apply colors to mesh
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    // Apply Initial Colors
+    updateColors() // Applies based on showAnalysis state
+    
     geometry.center()
     geometry.computeVertexNormals()
 
@@ -281,14 +342,24 @@ const onDrop = (event) => {
   z-index: 15;
 }
 
-.btn-reset {
+.controls-top {
   position: absolute; top: 10px; right: 10px;
+  display: flex; gap: 8px;
+}
+
+.btn-reset, .btn-toggle {
   background: rgba(30, 30, 30, 0.8); color: white;
   border: 1px solid #444; border-radius: 4px;
   padding: 6px 12px; cursor: pointer; pointer-events: auto;
-  font-size: 12px; transition: background 0.2s;
+  font-size: 12px; transition: all 0.2s;
 }
-.btn-reset:hover { background: #FF6600; border-color: #FF6600; }
+.btn-reset:hover, .btn-toggle:hover { background: #555; border-color: #666; }
+
+.btn-toggle.active {
+  background: rgba(255, 102, 0, 0.2);
+  border-color: #FF6600;
+  color: #FF6600;
+}
 
 .dimensions-panel {
   position: absolute; bottom: 10px; left: 10px;
@@ -300,4 +371,19 @@ const onDrop = (event) => {
 .dimensions-panel h4 { margin: 0 0 5px 0; color: #FF6600; font-size: 11px; text-transform: uppercase; }
 .dim-row { display: flex; justify-content: space-between; margin-bottom: 2px; }
 .dim-row span { color: #888; margin-right: 8px; }
+
+.mass-panel {
+  position: absolute; bottom: 10px; right: 10px;
+  background: rgba(30, 30, 30, 0.9); color: #E0E0E0;
+  padding: 10px; border-radius: 6px; border: 1px solid #444;
+  font-size: 12px; pointer-events: auto;
+  min-width: 140px;
+}
+.mass-panel h4 { margin: 0 0 8px 0; color: #FF6600; font-size: 11px; text-transform: uppercase; }
+.mass-panel select {
+  width: 100%; background: #222; color: white; border: 1px solid #555;
+  padding: 4px; border-radius: 4px; margin-bottom: 8px;
+}
+.mass-result { display: flex; justify-content: space-between; align-items: center; }
+.mass-result strong { color: #FF6600; font-size: 14px; }
 </style>
