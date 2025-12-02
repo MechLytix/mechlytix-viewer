@@ -6,8 +6,6 @@
     @dragleave="onDragLeave"
     @drop.prevent="onDrop"
   >
-    <div class="selection-handle">⚙️ Select Viewer</div>
-
     <div v-if="isLoading" class="overlay loading">
       <div class="spinner"></div>
       <p>Analyzing Geometry...</p>
@@ -44,6 +42,7 @@
       </TresMesh>
 
       <TresGridHelper :args="[20, 20, 0x444444, 0x333333]" />
+      <TresAxesHelper :args="[5]" />
 
     </TresCanvas>
   </div>
@@ -68,10 +67,29 @@ const dimensions = ref(null)
 const cameraRef = shallowRef(null)
 
 const resetCamera = () => {
-  if (cameraRef.value) {
-    cameraRef.value.position.set(10, 10, 10)
+  if (!cameraRef.value) return
+
+  const startPos = cameraRef.value.position.clone()
+  const targetPos = new THREE.Vector3(10, 10, 10)
+  const startTime = performance.now()
+  const duration = 1000 // 1 second
+
+  const animate = (currentTime) => {
+    const elapsed = currentTime - startTime
+    const progress = Math.min(elapsed / duration, 1)
+    
+    // Ease out cubic function for smooth feel
+    const ease = 1 - Math.pow(1 - progress, 3)
+
+    cameraRef.value.position.lerpVectors(startPos, targetPos, ease)
     cameraRef.value.lookAt(0, 0, 0)
+
+    if (progress < 1) {
+      requestAnimationFrame(animate)
+    }
   }
+  
+  requestAnimationFrame(animate)
 }
 
 // ⚠️ YOUR API URL (Confirm this matches your Google Cloud URL)
@@ -255,14 +273,6 @@ const onDrop = (event) => {
   border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px;
 }
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-/* SELECTION HANDLE (Top Right) */
-.selection-handle {
-  position: absolute; top: 0; right: 0; background-color: #FF6600;
-  color: white; padding: 4px 8px; font-size: 10px; font-weight: bold; 
-  text-transform: uppercase; cursor: pointer; z-index: 20;
-  pointer-events: auto;
-}
 
 /* UI CONTROLS */
 .ui-controls {
