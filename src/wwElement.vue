@@ -21,8 +21,20 @@
       <p>Drag & Drop STL or STEP File</p>
     </div>
 
+    <!-- UI CONTROLS -->
+    <div class="ui-controls" v-if="myGeometry">
+      <button @click="resetCamera" class="btn-reset">↺ Reset View</button>
+      
+      <div class="dimensions-panel" v-if="dimensions">
+        <h4>Dimensions</h4>
+        <div class="dim-row"><span>X:</span> {{ dimensions[0].toFixed(2) }}</div>
+        <div class="dim-row"><span>Y:</span> {{ dimensions[1].toFixed(2) }}</div>
+        <div class="dim-row"><span>Z:</span> {{ dimensions[2].toFixed(2) }}</div>
+      </div>
+    </div>
+
     <TresCanvas clear-color="#1E1E1E" style="width: 100%; height: 100%;">
-      <TresPerspectiveCamera :position="[10, 10, 10]" :look-at="[0, 0, 0]" />
+      <TresPerspectiveCamera ref="cameraRef" :position="[10, 10, 10]" :look-at="[0, 0, 0]" />
       <OrbitControls />
       <TresAmbientLight :intensity="1" />
       <TresDirectionalLight :position="[10, 10, 10]" :intensity="2" />
@@ -52,6 +64,15 @@ const props = defineProps({
 const myGeometry = shallowRef(null)
 const isDragging = ref(false)
 const isLoading = ref(false)
+const dimensions = ref(null)
+const cameraRef = shallowRef(null)
+
+const resetCamera = () => {
+  if (cameraRef.value) {
+    cameraRef.value.position.set(10, 10, 10)
+    cameraRef.value.lookAt(0, 0, 0)
+  }
+}
 
 // ⚠️ YOUR API URL (Confirm this matches your Google Cloud URL)
 const API_URL = "https://mechlytix-api-815993640334.europe-west2.run.app/analyze" 
@@ -74,6 +95,10 @@ const analyzeAndColor = async (file, localGeometry) => {
     
     const result = await response.json()
     console.log("Analysis Result:", result)
+    
+    if (result.dimensions) {
+      dimensions.value = result.dimensions
+    }
 
     // 2. Determine Geometry (Local STL or Backend GLB)
     let geometry = localGeometry
@@ -238,4 +263,31 @@ const onDrop = (event) => {
   text-transform: uppercase; cursor: pointer; z-index: 20;
   pointer-events: auto;
 }
+
+/* UI CONTROLS */
+.ui-controls {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  pointer-events: none; /* Let clicks pass through to canvas */
+  z-index: 15;
+}
+
+.btn-reset {
+  position: absolute; top: 10px; right: 10px;
+  background: rgba(30, 30, 30, 0.8); color: white;
+  border: 1px solid #444; border-radius: 4px;
+  padding: 6px 12px; cursor: pointer; pointer-events: auto;
+  font-size: 12px; transition: background 0.2s;
+}
+.btn-reset:hover { background: #FF6600; border-color: #FF6600; }
+
+.dimensions-panel {
+  position: absolute; bottom: 10px; left: 10px;
+  background: rgba(30, 30, 30, 0.9); color: #E0E0E0;
+  padding: 10px; border-radius: 6px; border: 1px solid #444;
+  font-size: 12px; pointer-events: auto;
+  min-width: 120px;
+}
+.dimensions-panel h4 { margin: 0 0 5px 0; color: #FF6600; font-size: 11px; text-transform: uppercase; }
+.dim-row { display: flex; justify-content: space-between; margin-bottom: 2px; }
+.dim-row span { color: #888; margin-right: 8px; }
 </style>
